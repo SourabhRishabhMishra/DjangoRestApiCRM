@@ -1,0 +1,71 @@
+name: Django CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:5.7
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DJANGO_DB_NAME: test_db
+      DJANGO_DB_USER: test_user
+      DJANGO_DB_PASSWORD: test_pass
+      DJANGO_DB_HOST: 127.0.0.1
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install MySQL client libraries
+      run: sudo apt-get install -y default-libmysqlclient-dev
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Wait for MySQL to be ready
+      run: |
+        until mysqladmin ping -h "$DJANGO_DB_HOST" --silent; do
+          echo "Waiting for database..."
+          sleep 2
+        done
+
+    - name: Run migrations
+      run: |
+        python manage.py migrate
+      env:
+        DATABASE_NAME: ${{ env.DJANGO_DB_NAME }}
+        DATABASE_USER: ${{ env.DJANGO_DB_USER }}
+        DATABASE_PASSWORD: ${{ env.DJANGO_DB_PASSWORD }}
+        DATABASE_HOST: ${{ env.DJANGO_DB_HOST }}
+
+    - name: Run tests
+      run: |
+        python manage.py test
